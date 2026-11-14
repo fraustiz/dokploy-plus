@@ -1,5 +1,6 @@
 services:
   dokploy-plus:
+    image: ghcr.io/fraustiz/dokploy-plus/proxy:latest
     build: ./proxy
     restart: unless-stopped
     # The image runs as "node"; root is only needed to write Dokploy Plus's route into Traefik's
@@ -20,6 +21,7 @@ services:
     # For IP access, publish a separate entry point and set TRAEFIK=off:
     # ports: ["3001:3000"]
   dokploy-plus-agent:
+    image: ghcr.io/fraustiz/dokploy-plus/agent:latest
     build: ./agent
     restart: unless-stopped
     volumes:
