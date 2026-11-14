@@ -1,33 +1,57 @@
-// Pi-hole v6 API with an application password. One session is reused and renewed on 401:
-// Pi-hole limits concurrent API sessions (16 by default). With app_sudo off (Pi-hole default), the
-// app password can manage blocking and domain lists but cannot change Pi-hole's configuration.
+// Pi-hole v6 API with an application password. One session is shared by every request and renewed
+// on 401. Pi-hole checks at most 3 passwords per second (all clients together) and keeps 16 API
+// sessions by default, so concurrent requests wait for a single login instead of each logging in.
+// With app_sudo off (Pi-hole default), the app password can manage blocking and domain lists but
+// cannot change Pi-hole's configuration.
 import * as Config from "./config.mjs";
 
 const BLOCKED = new Set(["GRAVITY", "REGEX", "DENYLIST", "GRAVITY_CNAME", "REGEX_CNAME", "DENYLIST_CNAME", "EXTERNAL_BLOCKED_IP", "EXTERNAL_BLOCKED_NULL", "EXTERNAL_BLOCKED_NXRA", "EXTERNAL_BLOCKED_EDE15", "SPECIAL_DOMAIN"]);
 const fail = (status, message) => { const e = new Error(message); e.status = status; throw e; };
 const baseOf = (url) => String(url || "").replace(/\/+$/, "").replace(/\/admin$/, "");
-let session = null;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let session = null; // { key, sid }
+let pending = null; // { key, promise }: login in progress
 
 export const configured = () => !!Config.serviceUrl("pihole") && !!Config.secret("piholePassword");
 
 async function login(base, password) {
-  const r = await fetch(base + "/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }), redirect: "error", signal: AbortSignal.timeout(10000) });
-  const j = await r.json().catch(() => null);
-  if (!r.ok || !j?.session?.valid) fail(502, `Pi-hole login failed (HTTP ${r.status})`);
-  return j.session.sid;
+  for (let attempt = 0; ; attempt++) {
+    const r = await fetch(base + "/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }), redirect: "error", signal: AbortSignal.timeout(10000) });
+    const j = await r.json().catch(() => null);
+    if (r.ok && j?.session?.valid) return j.session.sid;
+    const reason = j?.error?.key;
+    // Another client used this second's password checks: try again in the next second.
+    if (r.status === 429 && reason === "rate_limiting" && attempt < 3) { await sleep(1100); continue; }
+    if (reason === "api_seats_exceeded") fail(502, "Pi-hole has no free API session (webserver.api.max_sessions); unused sessions expire after webserver.session.timeout");
+    fail(502, r.status === 401 ? "Pi-hole refused the app password" : `Pi-hole login failed (HTTP ${r.status})`);
+  }
+}
+
+function sharedSid(base, password) {
+  const key = base + "|" + password;
+  if (session?.key === key) return Promise.resolve(session.sid);
+  if (pending?.key === key) return pending.promise;
+  const promise = login(base, password).then(
+    (sid) => { if (pending?.promise === promise) pending = null; session = { key, sid }; return sid; },
+    (e) => { if (pending?.promise === promise) pending = null; throw e; });
+  pending = { key, promise };
+  return promise;
 }
 
 async function call(path, { method = "GET", body, base = baseOf(Config.serviceUrl("pihole")), password = Config.secret("piholePassword"), shared = true } = {}) {
   if (!base || !password) fail(404, "Pi-hole is not configured");
-  const key = base + "|" + password;
   for (let attempt = 0; attempt < 2; attempt++) {
-    let sid = shared && session?.key === key ? session.sid : null;
-    if (!sid) { sid = await login(base, password); if (shared) session = { key, sid }; }
-    const r = await fetch(base + "/api" + path, { method, headers: { "X-FTL-SID": sid, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined, redirect: "error", signal: AbortSignal.timeout(20000) });
-    if (r.status === 401 && attempt === 0) { if (shared) session = null; continue; }
-    const text = await r.text();
+    const sid = shared ? await sharedSid(base, password) : await login(base, password);
+    let r, text;
+    try {
+      r = await fetch(base + "/api" + path, { method, headers: { "X-FTL-SID": sid, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined, redirect: "error", signal: AbortSignal.timeout(20000) });
+      text = await r.text();
+    } finally {
+      if (!shared) await fetch(base + "/api/auth", { method: "DELETE", headers: { "X-FTL-SID": sid }, signal: AbortSignal.timeout(5000) }).catch(() => {});
+    }
+    // Expired session: forget it once (concurrent requests share the next login) and retry.
+    if (r.status === 401 && shared && attempt === 0) { if (session?.sid === sid) session = null; continue; }
     let j = null; try { j = text ? JSON.parse(text) : null; } catch {}
-    if (!shared) await fetch(base + "/api/auth", { method: "DELETE", headers: { "X-FTL-SID": sid }, signal: AbortSignal.timeout(5000) }).catch(() => {});
     if (!r.ok) fail(r.status === 400 || r.status === 404 ? 400 : 502, j?.error?.message ? `Pi-hole: ${j.error.message}${j.error.hint ? ` (${j.error.hint})` : ""}` : `Pi-hole HTTP ${r.status}`);
     return j;
   }

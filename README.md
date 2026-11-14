@@ -21,7 +21,7 @@ Settings checks the latest [GitHub release](https://github.com/fraustiz/dokploy-
 - **Dokploy Raw compose installs**: the owner clicks **Update**. The extension pins its two images to the new version in its own compose file and asks Dokploy to redeploy it, using the owner's Dokploy session: no API key, Docker socket or extra privilege is involved. The page reloads when the new version answers. Keep the images on `ghcr.io/fraustiz/dokploy-plus/…` and do not set `pull_policy: never` on them.
 - **CLI installs**: Settings shows the command to run in the repository folder: `git pull && docker compose pull && docker compose up -d`.
 
-To pin a release by hand, replace `latest` with a tag such as `v0.13.0`. Set `UPDATE_CHECK=off` on the relay to disable the check (no request to GitHub is made then).
+To pin a release by hand, replace `latest` with a tag such as `v0.13.1`. Set `UPDATE_CHECK=off` on the relay to disable the check (no request to GitHub is made then).
 
 ## Storage options
 
@@ -77,4 +77,4 @@ Choose the integration on a Dashboard card and save the credentials in Settings.
 
 ## Pi-hole
 
-With a Pi-hole v6 URL and an **application password** (Pi-hole → Settings → Web interface / API → Configure app password) saved in Settings, a **Pi-hole** page appears in the sidebar: blocking status with pause (5 min, 30 min, 1 h) or off, today's statistics, a 24-hour chart, most blocked and most allowed domains with one-click allow or block, the recent query log and your allow/block lists. With Pi-hole's default `webserver.api.app_sudo = false`, the application password can manage blocking and domain lists but cannot change Pi-hole's configuration (upstream DNS, passwords). Changes apply to the whole network and are written to the relay's audit log. One API session is reused, because Pi-hole limits concurrent sessions.
+With a Pi-hole v6 URL and an **application password** (Pi-hole → Settings → Web interface / API → Configure app password) saved in Settings, a **Pi-hole** page appears in the sidebar: blocking status with pause (5 min, 30 min, 1 h) or off, today's statistics, a 24-hour chart, most blocked and most allowed domains with one-click allow or block, the recent query log and your allow/block lists. With Pi-hole's default `webserver.api.app_sudo = false`, the application password can manage blocking and domain lists but cannot change Pi-hole's configuration (upstream DNS, passwords). Changes apply to the whole network and are written to the relay's audit log. The relay keeps one API session and logs in again only when it expires, with a single login shared by all pending requests: Pi-hole checks at most 3 passwords per second and keeps 16 sessions.

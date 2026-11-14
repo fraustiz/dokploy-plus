@@ -92,3 +92,30 @@ test('Radarr picks the next release inside the window; Pi-hole list entries are 
  await assert.rejects(P.addDomain({domain:'ok.example',type:'everything',kind:'exact'}),/Invalid list/);
  await assert.rejects(P.setBlocking(false,5),/timer must be/);
 });
+test('Pi-hole: concurrent requests share one login, also after expiry, and wait out the 3 logins/second limit',async()=>{
+ const P=await import('../proxy/lib/pihole.mjs');
+ let logins=0,n=0,second=0,inSecond=0;const valid=new Set();
+ const ph=http.createServer((req,res)=>{req.resume();req.on('end',()=>{
+  res.setHeader('content-type','application/json');
+  if(req.url==='/api/auth'&&req.method==='POST'){
+   const s=Math.floor(Date.now()/1000);if(s!==second){second=s;inSecond=0;}
+   if(++inSecond>3){res.statusCode=429;return res.end(JSON.stringify({error:{key:'rate_limiting',message:'Rate-limiting login attempts'}}));}
+   logins++;const sid='sid'+(++n);valid.add(sid);return res.end(JSON.stringify({session:{valid:true,sid}}));
+  }
+  if(req.url==='/api/auth'&&req.method==='DELETE'){valid.delete(req.headers['x-ftl-sid']);res.statusCode=204;return res.end();}
+  if(!valid.has(req.headers['x-ftl-sid'])){res.statusCode=401;return res.end(JSON.stringify({error:{key:'unauthorized',message:'Unauthorized'}}));}
+  res.end(JSON.stringify({queries:{total:10,blocked:1,percent_blocked:10},blocking:'enabled'}));
+ });});await listen(ph);
+ const base=`http://127.0.0.1:${ph.address().port}/admin/`;
+ Config.update({integrations:{pihole:{url:base}}});Config.setSecret('piholePassword','app-pw');
+ try{
+  const [a,b]=await Promise.all([P.overview(),P.overview()]);
+  assert.equal(logins,1);assert.equal(a.queries.total,10);assert.equal(b.blocking.state,'enabled');
+  valid.clear();// the session expired
+  const [,card]=await Promise.all([P.overview(),P.card(base,'app-pw')]);
+  assert.equal(logins,2);assert.equal(card.percent,10);assert.equal(valid.size,1);
+  valid.clear();second=Math.floor(Date.now()/1000);inSecond=3;// other clients used this second's logins
+  assert.equal((await P.overview()).queries.blocked,1);assert.equal(logins,3);
+  assert.match(await P.test(base,'app-pw'),/10% of 10/);assert.equal(valid.size,1);// test() logs its session out
+ }finally{await close(ph);Config.update({integrations:{}});Config.setSecret('piholePassword','');}
+});
