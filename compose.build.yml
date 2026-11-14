@@ -1,0 +1,7 @@
+# Build the images from this checkout instead of pulling them:
+#   docker compose -f compose.yml -f compose.build.yml up -d --build
+services:
+  dokploy-plus:
+    build: ./proxy
+  dokploy-plus-agent:
+    build: ./agent

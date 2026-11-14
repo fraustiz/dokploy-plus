@@ -41,3 +41,30 @@ test('temperature limits: Settings value for hard disks, drive limit or 70 °C f
  assert.equal(tempLimit({name:'nvme0n1',rotational:false,smart:{}},55),70);
  assert.equal(tempLimit({name:'sdc',rotational:false,smart:{temperature_limit_c:null}},55),70);
 });
+test('one-click update pins our images in the Raw compose and asks Dokploy to redeploy it',async()=>{
+ const file='services:\n  relay:\n    image: ghcr.io/fraustiz/dokploy-plus/proxy:v0.11.3\n  agent:\n    image: "ghcr.io/fraustiz/dokploy-plus/agent"\n  db:\n    image: postgres:18\n';
+ const calls=[];
+ const dokploy=http.createServer((req,res)=>{let body='';req.on('data',c=>body+=c);req.on('end',()=>{
+  const u=new URL(req.url,'http://x');const name=u.pathname.split('/').pop();calls.push({name,method:req.method,cookie:req.headers.cookie,body:body&&JSON.parse(body).json});
+  const input=u.searchParams.get('input')&&JSON.parse(u.searchParams.get('input')).json;
+  const data=name==='project.all'?[{environments:[{compose:[{composeId:'other'},{composeId:'mine'}]}]}]
+   :name==='compose.one'?(input.composeId==='mine'?{composeId:'mine',name:'dokploy-plus',sourceType:'raw',composeFile:file}:{composeId:'other',name:'db',sourceType:'raw',composeFile:'services: {}'}):{ok:true};
+  res.setHeader('content-type','application/json');res.end(JSON.stringify({result:{data:{json:data}}}));});});
+ const github=http.createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({tag_name:'v0.12.0',html_url:'https://example.test/r',body:'Notes',published_at:'2026-11-14T00:00:00Z'}));});
+ await listen(dokploy);await listen(github);
+ process.env.DOKPLOY_URL=`http://127.0.0.1:${dokploy.address().port}`;process.env.UPDATE_API=`http://127.0.0.1:${github.address().port}`;
+ try{
+  const U=await import('../proxy/lib/update.mjs');
+  assert.ok(U.newer('0.12.0','0.11.3'));assert.ok(!U.newer('0.11.3','0.11.3'));assert.ok(U.newer('0.11.10','0.11.9'));
+  const req={headers:{cookie:'session=owner',host:'dokploy.example.test'}};
+  const st=await U.status(req,'0.11.3',{role:'owner'});assert.equal(st.available,true);assert.equal(st.latest.version,'0.12.0');assert.deepEqual(st.managed,{name:'dokploy-plus'});
+  const adminView=await U.status(req,'0.11.3',{role:'admin'});assert.equal(adminView.managed,null);
+  calls.length=0;const r=await U.apply(req,'0.11.3');assert.deepEqual(r,{ok:true,from:'0.11.3',to:'0.12.0',compose:'dokploy-plus'});
+  const update=calls.find(c=>c.name==='compose.update'),deploy=calls.find(c=>c.name==='compose.deploy');
+  assert.equal(update.method,'POST');assert.equal(update.cookie,'session=owner');assert.equal(update.body.composeId,'mine');
+  assert.ok(update.body.composeFile.includes('image: ghcr.io/fraustiz/dokploy-plus/proxy:v0.12.0\n'));assert.ok(update.body.composeFile.includes('image: "ghcr.io/fraustiz/dokploy-plus/agent:v0.12.0"'));assert.ok(update.body.composeFile.includes('image: postgres:18'));
+  assert.deepEqual(deploy.body,{composeId:'mine'});
+  assert.ok(!calls.some(c=>c.name==='project.all'),'remembered compose is reused');
+  await assert.rejects(U.apply(req,'0.12.0'),/Already up to date/);
+ }finally{await close(dokploy);await close(github);}
+});

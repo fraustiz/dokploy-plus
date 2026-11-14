@@ -1,7 +1,8 @@
+# Paste this file into a Dokploy Compose service (source: Raw) to get one-click updates from
+# Settings, or run it with `docker compose up -d`. To build from source, see compose.build.yml.
 services:
   dokploy-plus:
     image: ghcr.io/fraustiz/dokploy-plus/proxy:latest
-    build: ./proxy
     restart: unless-stopped
     # The image runs as "node"; root is only needed to write Dokploy Plus's route into Traefik's
     # root-owned dynamic directory. With TRAEFIK=off, remove this line and that volume.
@@ -22,7 +23,6 @@ services:
     # ports: ["3001:3000"]
   dokploy-plus-agent:
     image: ghcr.io/fraustiz/dokploy-plus/agent:latest
-    build: ./agent
     restart: unless-stopped
     volumes:
       - /etc/hostname:/host/etc/hostname:ro

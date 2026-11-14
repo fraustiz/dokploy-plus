@@ -100,6 +100,7 @@ export function update(patch) {
   const c = load();
   if (patch.dashboard) c.dashboard = patch.dashboard;
   if (patch.integrations) c.integrations = patch.integrations;
+  if (patch.update) c.update = patch.update;
   if ("siteTitle" in patch) c.siteTitle = patch.siteTitle;
   if (patch.modules) for (const k of Object.keys(DEFAULTS.modules)) if (k in patch.modules) c.modules[k] = !!patch.modules[k];
   if (patch.alerts) for (const k of Object.keys(DEFAULTS.alerts)) if (k in patch.alerts) c.alerts[k] = patch.alerts[k];

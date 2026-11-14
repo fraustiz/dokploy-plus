@@ -1,4 +1,5 @@
 import * as Settings from "./lib/settings.mjs";
+import * as Update from "./lib/update.mjs";
 import * as Incidents from "./lib/incidents.mjs";
 import * as Backups from "./lib/backups.mjs";
 import * as Dashboard from "./lib/dashboard.mjs";
@@ -154,6 +155,13 @@ async function handleExt(req, res, url) {
     if (p === "/_ext/api/operations/backups" && req.method === "GET") return json(res, 200, await Backups.summary(req));
     if (p === "/_ext/api/dashboard") return Dashboard.handle(req, res, url, user, { json, readBody });
 
+  if (p === "/_ext/api/update" && !write) return json(res, 200, await Update.status(req, VERSION, user, url.searchParams.has("refresh")));
+  if (p === "/_ext/api/update/apply" && req.method === "POST") {
+    if (!isOwner(user)) return json(res, 403, { error: "Only the owner can update Dokploy Plus" });
+    const r = await Update.apply(req, VERSION);
+    audit(user, `update ${r.from} -> ${r.to} (compose ${r.compose})`);
+    return json(res, 200, r);
+  }
   if (p === "/_ext/api/settings" || p === "/_ext/api/settings/test") return Settings.handle(req, res, user, {json, readBody, version: VERSION, traefik: Traefik.state});
 
   // ---- storage

@@ -4,11 +4,24 @@ Modules for the official Dokploy dashboard without a fork: an application dashbo
 
 ## Install
 
-Clone this repository on the Linux host running Dokploy. Run `docker compose up -d`: it pulls the published images (`ghcr.io/fraustiz/dokploy-plus/proxy` and `/agent`, x86 and ARM). Add `--build` to build them locally instead. Open your Dokploy domain, then **Settings** in the sidebar to enable modules and connect services (Cloudflare, Jellyfin, Home Assistant, Beszel, Uptime Kuma, Discord). Each connection has a **Test connection** button that checks the values in the form before saving. Refresh the page after changing modules. No Cloudflare token is required for storage.
+**Recommended: as a Dokploy service** (one-click updates from Settings). In Dokploy, create a **Compose** service, choose **Raw** as the source, paste [`compose.yml`](compose.yml), adjust the commented options (SMART, Docker socket) and **Deploy**.
 
-To update, run `docker compose pull && docker compose up -d`. To pin a release, replace `latest` with a tag such as `v0.11.3`. The dashboard is expected at `http://dokploy:3000` on `dokploy-network`. Traefik configuration must use a file-provider service pointing to that URL. The extension discovers its domain from Dokploy's configuration and writes a separate `dokploy-plus.yml`; it never rewrites `dokploy.yml`. HTML navigation falls back to Dokploy if the extension fails. Test compatibility after Dokploy updates: sidebar markup and shadcn classes can change.
+**Or with the Docker CLI**: clone this repository on the Linux host running Dokploy and run `docker compose up -d`. To build the images from source instead of pulling them: `docker compose -f compose.yml -f compose.build.yml up -d --build`.
+
+Both pull the published images (`ghcr.io/fraustiz/dokploy-plus/proxy` and `/agent`, x86 and ARM). Then open your Dokploy domain and **Settings** in the sidebar to enable modules and connect services (Cloudflare, Jellyfin, Home Assistant, Beszel, Uptime Kuma, Discord). Each connection has a **Test connection** button that checks the values in the form before saving. Refresh the page after changing modules. No Cloudflare token is required for storage.
+
+The dashboard is expected at `http://dokploy:3000` on `dokploy-network`. Traefik configuration must use a file-provider service pointing to that URL. The extension discovers its domain from Dokploy's configuration and writes a separate `dokploy-plus.yml`; it never rewrites `dokploy.yml`. HTML navigation falls back to Dokploy if the extension fails. Test compatibility after Dokploy updates: sidebar markup and shadcn classes can change.
 
 For access by IP, publish `3001:3000` on the relay and set `TRAEFIK=off`; use that port to open Dokploy. HTTP and WebSocket traffic are relayed. HTTPS upstreams are not supported; terminate TLS at Traefik.
+
+## Updates
+
+Settings checks the latest [GitHub release](https://github.com/fraustiz/dokploy-plus/releases) (every 6 hours, from the server) and shows its release notes when a newer version exists.
+
+- **Dokploy Raw compose installs**: the owner clicks **Update**. The extension pins its two images to the new version in its own compose file and asks Dokploy to redeploy it, using the owner's Dokploy session: no API key, Docker socket or extra privilege is involved. The page reloads when the new version answers. Keep the images on `ghcr.io/fraustiz/dokploy-plus/…` and do not set `pull_policy: never` on them.
+- **CLI installs**: Settings shows the command to run in the repository folder: `git pull && docker compose pull && docker compose up -d`.
+
+To pin a release by hand, replace `latest` with a tag such as `v0.12.0`. Set `UPDATE_CHECK=off` on the relay to disable the check (no request to GitHub is made then).
 
 ## Storage options
 
