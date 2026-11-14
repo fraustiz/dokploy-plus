@@ -1,0 +1,48 @@
+services:
+  dokploy-plus:
+    build: ./proxy
+    restart: unless-stopped
+    # The image runs as "node"; root is only needed to write Dokploy Plus's route into Traefik's
+    # root-owned dynamic directory. With TRAEFIK=off, remove this line and that volume.
+    user: "0:0"
+    environment:
+      DOKPLOY_URL: http://dokploy:3000
+      AGENT_URL: http://dokploy-plus-agent:8080
+      SELF_URL: http://dokploy-plus:3000
+    volumes:
+      - settings:/data
+      # Optional authenticated image cleanup; share this file with the collector.
+      # - ./secrets/agent-token:/data/agent-token:ro
+      - /etc/dokploy/traefik/dynamic:/etc/dokploy/traefik/dynamic
+    networks:
+      - dokploy-network
+      - collector
+    # For IP access, publish a separate entry point and set TRAEFIK=off:
+    # ports: ["3001:3000"]
+  dokploy-plus-agent:
+    build: ./agent
+    restart: unless-stopped
+    volumes:
+      - /etc/hostname:/host/etc/hostname:ro
+      - /proc:/proc:ro
+      - /sys:/sys:ro
+      - insights:/state
+      # Optional authenticated cleanup: mount the same token file on relay and agent.
+      # - ./secrets/agent-token:/run/secrets/agent-token:ro
+      # Optional Docker accounting. A socket grants powerful host access even with :ro.
+      # - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      SMART: "off"
+    networks:
+      - collector
+    # For physical disks / SMART, enable privileged mode, SMART=auto and mount /dev.
+    # privileged: true
+    # volumes also: /dev:/dev
+networks:
+  dokploy-network:
+    external: true
+  collector:
+    internal: true
+volumes:
+  settings:
+  insights:
