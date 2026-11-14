@@ -37,7 +37,7 @@ function diskLevel(d, st) {
   if (!s.available) return { lvl: "idle", why: d.standby || s.standby ? tr("en veille","in standby") : tr("SMART illisible","SMART unavailable") };
   const why = Object.values(s.attributes || {}).filter((a) => a.raw > 0).map((a) => `${a.label} : ${a.raw}`);
   if (s.nvme?.media_errors > 0) why.push(`${tr("erreurs média : ","media errors: ")}${s.nvme.media_errors}`);
-  if (s.temperature_c != null && s.temperature_c >= th.temperature_c - 8) why.push(`${tr("chaud : ","hot: ")}${s.temperature_c} °C`);
+  if (s.temperature_c != null && s.temperature_c >= (d.temperature_alert_c ?? th.temperature_c) - 8) why.push(`${tr("chaud : ","hot: ")}${s.temperature_c} °C`);
   return why.length ? { lvl: "warn", why: why.join(" · ") } : { lvl: "ok", why: tr("aucune erreur","no errors") };
 }
 
@@ -227,7 +227,8 @@ function disksTable(st) {
     const type = d.name.startsWith("nvme") ? "NVMe" : d.rotational ? "HDD" : "SSD";
     const nv = s.nvme;
     const t = s.temperature_c;
-    const tBadge = t == null ? "—" : badge(t >= th.temperature_c ? "red" : t >= th.temperature_c - 8 ? "orange" : "blank", `${t} °C`);
+    const lim = d.temperature_alert_c ?? th.temperature_c;
+    const tBadge = t == null ? "—" : `<span title="Alert at ${lim} °C">${badge(t >= lim ? "red" : t >= lim - 8 ? "orange" : "blank", `${t} °C`)}</span>`;
     const na = `<span class="${C.muted}">n/a</span>`;
     const test = s.self_test
       ? `<div class="flex flex-col"><span>${esc(s.self_test.type)} · ${s.self_test.passed === false ? `<span class="text-destructive">${esc(s.self_test.status)}</span>` : esc(s.self_test.status)}</span>${
@@ -282,7 +283,7 @@ function render(st) {
     ${resources(st)}
     ${st.mode === "hardware" ? section(tr("Disques","Disks"), tr("Santé SMART lue toutes les 5 minutes, sans réveiller un disque en veille.","SMART health checked every 5 minutes without waking sleeping disks."), disksTable(st)) : ""}
     ${others.length ? section(tr("Autres volumes","Other volumes"), "", `<div class="flex flex-col gap-4">${others.map((v) => volume(v, th.usage_pct)).join("")}</div>`) : ""}
-    ${alertBlock("info", `${tr("Lecture seule. Alertes Discord ","Read-only. Discord alerts ")}${st.alerts?.discord ? `${tr("activées (intervalle ","enabled (interval ")}${st.alerts.intervalMin} min)` : tr("désactivées", "disabled")}${tr(" : RAID dégradé, disque en échec, compteurs SMART en hausse, température ≥ ",": degraded RAID, failed disks, rising SMART counters, temperature ≥ ")}${th.temperature_c} °C${tr(", volume ≥ ",", volume ≥ ")}${th.usage_pct} %.`)}
+    ${alertBlock("info", `${tr("Lecture seule. Alertes Discord ","Read-only. Discord alerts ")}${st.alerts?.discord ? `${tr("activées (intervalle ","enabled (interval ")}${st.alerts.intervalMin} min)` : tr("désactivées", "disabled")}${tr(" : RAID dégradé, disque en échec, compteurs SMART en hausse, température ≥ ",": degraded RAID, failed disks, rising SMART counters, hard disk temperature ≥ ")}${th.temperature_c} °C (SSD/NVMe: their own limit)${tr(", volume ≥ ",", volume ≥ ")}${th.usage_pct} %.`)}
   </div>`;
 }
 

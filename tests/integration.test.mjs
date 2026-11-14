@@ -34,3 +34,10 @@ test('Kuma monitors attach to dashboard cards by host and path, or by a unique h
  const h=Dashboard.matchHealth(apps,monitors);
  assert.deepEqual(Object.keys(h).sort(),['a','b','d']);assert.equal(h.a.status,'up');assert.equal(h.a.uptime24h,99.5);assert.equal(h.b.status,'down');assert.ok(!('url' in h.a));
 });
+test('temperature limits: Settings value for hard disks, drive limit or 70 °C for SSD/NVMe',async()=>{
+ const {tempLimit}=await import('../proxy/lib/alerts.mjs');
+ assert.equal(tempLimit({name:'sda',rotational:true,smart:{temperature_limit_c:60}},55),55);
+ assert.equal(tempLimit({name:'nvme0n1',rotational:false,smart:{temperature_limit_c:83}},55),83);
+ assert.equal(tempLimit({name:'nvme0n1',rotational:false,smart:{}},55),70);
+ assert.equal(tempLimit({name:'sdc',rotational:false,smart:{temperature_limit_c:null}},55),70);
+});

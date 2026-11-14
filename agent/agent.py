@@ -136,6 +136,8 @@ def parse_smart(data):
         "available": True,
         "passed": (data.get("smart_status") or {}).get("passed"),
         "temperature_c": (data.get("temperature") or {}).get("current"),
+        # Drive-reported warning temperature (NVMe WCTEMP, some SSDs); None for most hard disks.
+        "temperature_limit_c": (data.get("temperature") or {}).get("op_limit_max"),
         "power_on_hours": (data.get("power_on_time") or {}).get("hours"),
         "power_cycles": data.get("power_cycle_count"),
         "serial": data.get("serial_number"), "firmware": data.get("firmware_version"), "model": data.get("model_name"),

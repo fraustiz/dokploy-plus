@@ -9,6 +9,14 @@ const STATE = path.join(process.env.DATA_DIR || "/data", "alerts-state.json");
 const HEALTHY = new Set(["clean", "active", "active-idle", "write-pending", "readonly", "read-auto"]);
 const ATTR = { 5: "reallocated sectors", 187: "uncorrectable errors", 197: "pending sectors", 198: "offline uncorrectable sectors", 199: "CRC errors (cable)" };
 
+// Temperature that counts as too hot for a disk. The Settings threshold is meant for hard disks;
+// SSD/NVMe run warmer and use their own reported warning limit (NVMe WCTEMP), or 70 °C.
+export function tempLimit(d, hddLimit) {
+  if (d.rotational !== false && !d.name?.startsWith("nvme")) return hddLimit;
+  const own = d.smart?.temperature_limit_c;
+  return Number.isFinite(own) && own > 0 ? own : Math.max(hddLimit, 70);
+}
+
 function problems(st, a) {
   const p = {};
   for (const r of st.arrays || []) {
@@ -20,7 +28,7 @@ function problems(st, a) {
   for (const d of st.disks || []) {
     const s = d.smart || {};
     if (s.passed === false) p[`smart-failed:${d.name}`] = `Disk ${d.name} (${d.model || "?"}): SMART health check FAILED`;
-    if (s.temperature_c != null && s.temperature_c >= a.tempC) p[`temp:${d.name}`] = `Disk ${d.name} at ${s.temperature_c} °C`;
+    if (s.temperature_c != null && s.temperature_c >= tempLimit(d, a.tempC)) p[`temp:${d.name}`] = `Disk ${d.name} at ${s.temperature_c} °C (limit ${tempLimit(d, a.tempC)} °C)`;
     if (s.nvme?.critical_warning) p[`nvme:${d.name}`] = `NVMe ${d.name}: critical warning ${s.nvme.critical_warning}`;
   }
   return p;

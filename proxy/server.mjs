@@ -159,7 +159,7 @@ async function handleExt(req, res, url) {
   // ---- storage
   if (p === "/_ext/api/storage/status" && !write) {
     if (!cfg.modules.storage) return json(res, 404, { error: "storage module disabled" });
-    try { return json(res, 200, { ...(await agentStatus()), thresholds: { usage_pct: cfg.alerts.usagePct, temperature_c: cfg.alerts.tempC }, alerts: { discord: !!Config.secret("discordWebhook"), intervalMin: cfg.alerts.intervalMin } }); }
+    try { const st = await agentStatus(); return json(res, 200, { ...st, disks: (st.disks || []).map((d) => ({ ...d, temperature_alert_c: Alerts.tempLimit(d, cfg.alerts.tempC) })), thresholds: { usage_pct: cfg.alerts.usagePct, temperature_c: cfg.alerts.tempC }, alerts: { discord: !!Config.secret("discordWebhook"), intervalMin: cfg.alerts.intervalMin } }); }
     catch (e) { return json(res, 502, { error: `storage agent unreachable: ${e.message}` }); }
   }
 
