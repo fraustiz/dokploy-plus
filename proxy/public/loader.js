@@ -74,6 +74,14 @@
       while (n && (n.dataset.extItem || n.dataset.extLanguage)) n = n.nextElementSibling;
       if (n) menu.appendChild(item); // une entrée Dokploy est passée après : on redescend
       const link = item.querySelector('[data-sidebar="menu-button"]') || item.querySelector("a");
+      if (m.id === "settings" && link && updateAvailable && !link.querySelector("[data-ext-badge]")) {
+        const dot = document.createElement("span");
+        dot.dataset.extBadge = "1";
+        dot.title = "Update available";
+        dot.setAttribute("aria-label", "Update available");
+        dot.style.cssText = "margin-left:auto;width:8px;height:8px;border-radius:9999px;background:var(--primary);flex:none";
+        link.appendChild(dot);
+      }
       const on = current?.id === m.id;
       link?.classList.toggle("bg-border", on);
       link?.querySelector("svg")?.classList.toggle("text-primary", on);
@@ -250,6 +258,7 @@
   // ---------------------------------------------------------------- démarrage
   let started = false;
   let checking = false;
+  let updateAvailable = false;
   async function start() {
     if (started || checking) return;
     checking = true;
@@ -269,6 +278,8 @@
     }).observe(document.body, { childList: true, subtree: true });
     ensureMenu();
     setTimeout(ensureFab, 8000);
+    // Owner only: a dot on Settings when a newer release exists (checked server-side, cached 6 h).
+    if (me.owner) fetch("/_ext/api/update", { credentials: "same-origin" }).then((r) => r.json()).then((u) => { if (u.available) { updateAvailable = true; ensureMenu(); } }).catch(() => {});
     const fromHash = MODULES.find((m) => location.hash === HASH(m.id));
     if (fromHash) open(fromHash.id);
   }

@@ -21,7 +21,7 @@ Settings checks the latest [GitHub release](https://github.com/fraustiz/dokploy-
 - **Dokploy Raw compose installs**: the owner clicks **Update**. The extension pins its two images to the new version in its own compose file and asks Dokploy to redeploy it, using the owner's Dokploy session: no API key, Docker socket or extra privilege is involved. The page reloads when the new version answers. Keep the images on `ghcr.io/fraustiz/dokploy-plus/…` and do not set `pull_policy: never` on them.
 - **CLI installs**: Settings shows the command to run in the repository folder: `git pull && docker compose pull && docker compose up -d`.
 
-To pin a release by hand, replace `latest` with a tag such as `v0.12.0`. Set `UPDATE_CHECK=off` on the relay to disable the check (no request to GitHub is made then).
+To pin a release by hand, replace `latest` with a tag such as `v0.12.1`. Set `UPDATE_CHECK=off` on the relay to disable the check (no request to GitHub is made then).
 
 ## Storage options
 
