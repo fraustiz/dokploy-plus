@@ -6,6 +6,8 @@
   window.__dokployExt = true;
 
   const tr = (_fr, en) => en;
+  // Version of this loader (?v= on its script tag), used to key module URLs and spot updates.
+  const LOADED = document.currentScript ? new URL(document.currentScript.src).searchParams.get("v") : null;
   const ALL_MODULES = [
     {
       id: "storage",
@@ -194,11 +196,23 @@
     history.replaceState(history.state, "", location.pathname + location.search + HASH(id));
     ensureMenu();
     try {
-      const mod = await import(`${m.src}?v=${Date.now() >> 16}`);
+      const mod = await import(`${m.src}?v=${encodeURIComponent(LOADED || Date.now())}`);
       if (current?.host !== host) return;
       current.unmount = mod.mount(host, { api: (p, options = {}) => fetch(`/_ext/api${p}`, { ...options, credentials: "same-origin" }) });
     } catch (e) {
-      host.textContent = `${tr("Module indisponible", "Module unavailable")} (${m.title}): ${String(e.message || e)}`;
+      // A tab opened before an update still runs the previous loader: its modules may be gone.
+      let live = null;
+      try { live = (await (await fetch("/_ext/health", { cache: "no-store" })).json()).version; } catch {}
+      if (current?.host !== host) return;
+      if (live && LOADED && live !== LOADED) {
+        host.textContent = `Dokploy Plus was updated to ${live}. Reload the page to continue. `;
+        const reload = document.createElement("button");
+        reload.type = "button";
+        reload.textContent = "Reload";
+        reload.className = "underline font-medium";
+        reload.onclick = () => location.reload();
+        host.appendChild(reload);
+      } else host.textContent = `${tr("Module indisponible", "Module unavailable")} (${m.title}): ${String(e.message || e)}`;
     }
   }
 
