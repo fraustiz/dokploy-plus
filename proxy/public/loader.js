@@ -24,6 +24,7 @@
       requires: "cloudflare",
     },
   ];
+  ALL_MODULES.push({ id: "pihole", title: "Pi-hole", src: "/_ext/static/modules/pihole.js", requires: "pihole", icon: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>' });
   ALL_MODULES.push({ id: "settings", title: "Settings", src: "/_ext/static/modules/settings.js", requires: "settings", icon: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>' });
   ALL_MODULES.unshift({ id: "dashboard", title: "Dashboard", src: "/_ext/static/modules/dashboard.js", icon: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>' });
   ALL_MODULES.push({id:"operations", title:"Operations", src:"/_ext/static/modules/operations.js", icon:'<path d="M3 12h4l3-8 4 16 3-8h4"/>'});
@@ -282,6 +283,11 @@
     if (me.owner) fetch("/_ext/api/update", { credentials: "same-origin" }).then((r) => r.json()).then((u) => { if (u.available) { updateAvailable = true; ensureMenu(); } }).catch(() => {});
     const fromHash = MODULES.find((m) => location.hash === HASH(m.id));
     if (fromHash) open(fromHash.id);
+    // In-page links such as <a href="#ext-settings"> open the module.
+    window.addEventListener("hashchange", () => {
+      const m = MODULES.find((x) => location.hash === HASH(x.id));
+      if (m && current?.id !== m.id) open(m.id);
+    });
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);

@@ -2,8 +2,8 @@
 // Compose service (Raw source) and asks Dokploy to redeploy it, with the owner's own session.
 // Installs made with the docker CLI are only told which command to run.
 import * as Config from "./config.mjs";
+import { rpc } from "./dokploy.mjs";
 
-const upstream = new URL(process.env.DOKPLOY_URL || process.env.DOKPLOY_UPSTREAM || "http://dokploy:3000");
 const REPO = process.env.UPDATE_REPO || "fraustiz/dokploy-plus";
 const API = process.env.UPDATE_API || "https://api.github.com";
 const IMAGE = `ghcr.io/${REPO.toLowerCase()}`;
@@ -42,18 +42,6 @@ export async function latest(force = false) {
   return release.value;
 }
 
-async function rpc(req, name, input, post = false) {
-  const url = new URL("/api/trpc/" + name, upstream);
-  const host = req.headers.host || upstream.host;
-  const headers = { cookie: req.headers.cookie || "", host, "x-forwarded-proto": "https" };
-  const init = { headers, signal: AbortSignal.timeout(15000) };
-  if (post) Object.assign(init, { method: "POST", headers: { ...headers, "content-type": "application/json", origin: `https://${host}` }, body: JSON.stringify({ json: input }) });
-  else if (input) url.searchParams.set("input", JSON.stringify({ json: input }));
-  const r = await fetch(url, init);
-  if (!r.ok) fail(r.status === 401 || r.status === 403 ? 403 : 502, `Dokploy ${name}: HTTP ${r.status}`);
-  return (await r.json()).result?.data?.json;
-}
-
 const ours = (c) => c?.sourceType === "raw" && typeof c.composeFile === "string" && retag(c.composeFile, "0.0.0").count > 0;
 
 // Our Compose service in Dokploy: the remembered one, otherwise the first Raw compose using our image.
@@ -88,7 +76,7 @@ export async function apply(req, current) {
   if (!c) fail(409, "This install is not a Dokploy Raw compose service: update it with docker compose.");
   const { file, count } = retag(c.composeFile, rel.version);
   if (!count) fail(409, "No Dokploy Plus image found in the compose file");
-  await rpc(req, "compose.update", { composeId: c.composeId, composeFile: file }, true);
-  await rpc(req, "compose.deploy", { composeId: c.composeId }, true);
+  await rpc(req, "compose.update", { composeId: c.composeId, composeFile: file }, { post: true });
+  await rpc(req, "compose.deploy", { composeId: c.composeId }, { post: true });
   return { ok: true, from: current, to: rel.version, compose: c.name };
 }

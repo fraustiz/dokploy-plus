@@ -1,6 +1,6 @@
 # Dokploy Plus
 
-Modules for the official Dokploy dashboard without a fork: an application dashboard (Jellyfin, Home Assistant, Beszel and Uptime Kuma integrations), storage, mdadm RAID, SMART, memory, swap, Docker usage, container incidents, backups overview, Cloudflare analytics and DNS. Owner/admin sessions are checked against Dokploy. Only the owner can change extension settings.
+Modules for the official Dokploy dashboard without a fork: an application dashboard (Jellyfin, Home Assistant, Beszel, Uptime Kuma, Sonarr, Radarr, Speedtest Tracker and Pi-hole integrations), a Pi-hole manager, a deployments overview, storage, mdadm RAID, SMART, memory, swap, Docker usage, container incidents, backups overview, Cloudflare analytics and DNS. Owner/admin sessions are checked against Dokploy. Only the owner can change extension settings.
 
 ## Install
 
@@ -21,7 +21,7 @@ Settings checks the latest [GitHub release](https://github.com/fraustiz/dokploy-
 - **Dokploy Raw compose installs**: the owner clicks **Update**. The extension pins its two images to the new version in its own compose file and asks Dokploy to redeploy it, using the owner's Dokploy session: no API key, Docker socket or extra privilege is involved. The page reloads when the new version answers. Keep the images on `ghcr.io/fraustiz/dokploy-plus/…` and do not set `pull_policy: never` on them.
 - **CLI installs**: Settings shows the command to run in the repository folder: `git pull && docker compose pull && docker compose up -d`.
 
-To pin a release by hand, replace `latest` with a tag such as `v0.12.1`. Set `UPDATE_CHECK=off` on the relay to disable the check (no request to GitHub is made then).
+To pin a release by hand, replace `latest` with a tag such as `v0.13.0`. Set `UPDATE_CHECK=off` on the relay to disable the check (no request to GitHub is made then).
 
 ## Storage options
 
@@ -66,3 +66,15 @@ Server cards link to each system in Beszel. Metrics older than three minutes are
 Dashboard cards show the state of the matching Uptime Kuma monitor (up/down, 24-hour uptime, and the TLS certificate when it is invalid or expires within 14 days); the header counts monitored apps that are down. In Settings, enter the Kuma base URL and an API key created in Kuma (*Settings → API Keys*). The relay reads Kuma's authenticated `/metrics` endpoint server-side: no public status page is needed and the key never reaches the browser.
 
 A monitor matches a card when its URL has the same host and path, or when it is the only monitor on that host (for example a card for `https://pihole.example/` and a monitor on `/admin/`). Monitors are created in Kuma itself; the API key only reads metrics.
+
+## Deployments
+
+Operations → **Deployments** lists the latest Dokploy deployments of every project you can access (read with your Dokploy session), the services whose last deployment failed, and Swarm services running fewer replicas than requested. The last case is invisible to container checks because no container exists (for example when an image disappeared): the collector checks Swarm services every minute and, after two checks in a row, raises an incident (and a Discord alert if a webhook is set). Swarm status needs the collector's Docker socket mount on a Swarm manager.
+
+## Sonarr, Radarr and Speedtest Tracker
+
+Choose the integration on a Dashboard card and save the credentials in Settings. Sonarr and Radarr cards show the releases due in the next 7 days, the download queue and health errors; their API key (Settings → General in each app) grants full access to the app, and Dokploy Plus only calls read endpoints. The Speedtest Tracker card shows the latest download, upload and ping with a trend of the last 30 tests; create an API token limited to `results:read`.
+
+## Pi-hole
+
+With a Pi-hole v6 URL and an **application password** (Pi-hole → Settings → Web interface / API → Configure app password) saved in Settings, a **Pi-hole** page appears in the sidebar: blocking status with pause (5 min, 30 min, 1 h) or off, today's statistics, a 24-hour chart, most blocked and most allowed domains with one-click allow or block, the recent query log and your allow/block lists. With Pi-hole's default `webserver.api.app_sudo = false`, the application password can manage blocking and domain lists but cannot change Pi-hole's configuration (upstream DNS, passwords). Changes apply to the whole network and are written to the relay's audit log. One API session is reused, because Pi-hole limits concurrent sessions.

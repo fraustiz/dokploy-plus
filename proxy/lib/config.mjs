@@ -8,7 +8,7 @@ import path from "node:path";
 const DATA = process.env.DATA_DIR || "/data";
 const FILE = path.join(DATA, "config.json");
 const KEY_FILE = path.join(DATA, ".key");
-const SECRET_FIELDS = ["cloudflareToken", "discordWebhook", "jellyfinToken", "homeassistantToken", "beszelEmail", "beszelPassword", "uptimeKumaKey"];
+const SECRET_FIELDS = ["cloudflareToken", "discordWebhook", "jellyfinToken", "homeassistantToken", "beszelEmail", "beszelPassword", "uptimeKumaKey", "sonarrKey", "radarrKey", "speedtestToken", "piholePassword"];
 
 const DEFAULTS = {
   modules: { storage: true, cloudflare: true },
@@ -81,6 +81,12 @@ export function load() {
     cfg = { ...structuredClone(DEFAULTS), ...j, modules: { ...DEFAULTS.modules, ...j.modules }, alerts: { ...DEFAULTS.alerts, ...j.alerts }, secrets: j.secrets || {} };
   }
   return cfg;
+}
+
+// Base URL of a connected service: Settings value, otherwise the first Dashboard card using it.
+export function serviceUrl(id) {
+  const c = load();
+  return String(c.integrations?.[id]?.url || c.dashboard?.apps?.find((a) => a.integration === id)?.url || "").replace(/\/+$/, "");
 }
 
 export function secret(name) {

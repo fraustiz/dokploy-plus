@@ -68,3 +68,27 @@ test('one-click update pins our images in the Raw compose and asks Dokploy to re
   await assert.rejects(U.apply(req,'0.12.0'),/Already up to date/);
  }finally{await close(dokploy);await close(github);}
 });
+test('deployments: newest first, failing = services whose last deployment failed, previews and backups excluded',async()=>{
+ const D=await import('../proxy/lib/deployments.mjs');
+ const env={environmentId:'e1',name:'production',project:{projectId:'p1',name:'Web'}};
+ const list=[
+  {deploymentId:'1',applicationId:'a1',application:{name:'Site',environment:env},status:'error',title:'fix: one\nmore',errorMessage:'build failed',createdAt:'2026-11-14T10:00:00Z'},
+  {deploymentId:'2',applicationId:'a1',application:{name:'Site',environment:env},status:'done',title:'fix: two',createdAt:'2026-11-14T11:00:00Z',finishedAt:'2026-11-14T11:01:00Z'},
+  {deploymentId:'3',composeId:'c1',compose:{name:'Stack',environment:env},status:'error',title:'Manual deployment',createdAt:'2026-11-14T09:00:00Z'},
+  {deploymentId:'4',applicationId:'a1',application:{name:'Site',environment:env},status:'error',isPreviewDeployment:true,createdAt:'2026-11-14T12:00:00Z'},
+  {deploymentId:'5',backupId:'b1',status:'error',createdAt:'2026-11-14T13:00:00Z'}];
+ const r=D.summarize(list);
+ assert.deepEqual(r.recent.map(x=>x.id),['2','1','3']);assert.deepEqual(r.failing.map(x=>x.service),['Stack']);
+ assert.equal(r.recent[1].title,'fix: one');assert.equal(r.recent[0].link,'/dashboard/project/p1/environment/e1/services/application/a1');assert.equal(r.recent[2].link,'/dashboard/project/p1/environment/e1/services/compose/c1');
+});
+test('Radarr picks the next release inside the window; Pi-hole list entries are validated before any request',async()=>{
+ const A=await import('../proxy/lib/arr.mjs');const P=await import('../proxy/lib/pihole.mjs');
+ const start=new Date('2026-11-14T00:00:00Z'),end=new Date('2026-11-21T00:00:00Z');
+ const [m]=A.upcoming('radarr',[{title:'Film',inCinemas:'2026-07-01T00:00:00Z',physicalRelease:'2026-11-18T00:00:00Z',digitalRelease:'2026-11-16T00:00:00Z',hasFile:false}],start,end);
+ assert.equal(m.detail,'Digital');assert.equal(m.at,'2026-11-16T00:00:00.000Z');
+ const [e]=A.upcoming('sonarr',[{series:{title:'Show'},seasonNumber:2,episodeNumber:5,airDateUtc:'2026-11-15T20:00:00Z',hasFile:true}],start,end);
+ assert.deepEqual(e,{title:'Show',detail:'S02E05',at:'2026-11-15T20:00:00Z',downloaded:true});
+ await assert.rejects(P.addDomain({domain:'bad domain!',type:'allow',kind:'exact'}),/Invalid domain/);
+ await assert.rejects(P.addDomain({domain:'ok.example',type:'everything',kind:'exact'}),/Invalid list/);
+ await assert.rejects(P.setBlocking(false,5),/timer must be/);
+});

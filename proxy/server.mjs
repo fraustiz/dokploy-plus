@@ -1,5 +1,7 @@
 import * as Settings from "./lib/settings.mjs";
 import * as Update from "./lib/update.mjs";
+import * as Deployments from "./lib/deployments.mjs";
+import * as Pihole from "./lib/pihole.mjs";
 import * as Incidents from "./lib/incidents.mjs";
 import * as Backups from "./lib/backups.mjs";
 import * as Dashboard from "./lib/dashboard.mjs";
@@ -136,7 +138,7 @@ async function handleExt(req, res, url) {
     if (!canView(user)) return json(res, 200, { allowed: false });
     return json(res, 200, {
       allowed: true, role: user.role, owner: isOwner(user), version: VERSION,
-      modules: { storage: cfg.modules.storage, cloudflare: cfg.modules.cloudflare && CF.cfConfigured(), settings: true },
+      modules: { storage: cfg.modules.storage, cloudflare: cfg.modules.cloudflare && CF.cfConfigured(), pihole: Pihole.configured(), settings: true },
     });
   }
   if (!canView(user)) return json(res, user ? 403 : 401, { error: "Dokploy owner or admin session required" });
@@ -153,6 +155,23 @@ async function handleExt(req, res, url) {
       return json(res, r.status, await r.json());
     }
     if (p === "/_ext/api/operations/backups" && req.method === "GET") return json(res, 200, await Backups.summary(req));
+    if (p === "/_ext/api/operations/deployments" && req.method === "GET") return json(res, 200, await Deployments.summary(req, AGENT));
+    if (p.startsWith("/_ext/api/pihole/")) {
+      if (!Pihole.configured()) return json(res, 404, { error: "Pi-hole is not configured (Settings → Pi-hole)" });
+      const sub = p.slice("/_ext/api/pihole/".length);
+      if (sub === "overview" && !write) return json(res, 200, await Pihole.overview());
+      if (sub === "queries" && !write) return json(res, 200, await Pihole.queries(url.searchParams.get("blocked") === "1"));
+      if (sub === "domains" && !write) return json(res, 200, await Pihole.domains());
+      if (sub === "blocking" && req.method === "POST") {
+        const b = await readBody(req); const r = await Pihole.setBlocking(b.enabled, b.timer);
+        audit(user, `pihole blocking ${b.enabled ? "enabled" : `disabled${b.timer ? ` for ${b.timer}s` : ""}`}`); return json(res, 200, r);
+      }
+      if (sub === "domains" && (req.method === "POST" || req.method === "DELETE")) {
+        const b = await readBody(req); const r = req.method === "POST" ? await Pihole.addDomain(b) : await Pihole.removeDomain(b);
+        audit(user, `pihole ${req.method === "POST" ? "add" : "remove"} ${r.type}/${r.kind} ${r.domain}`); return json(res, 200, r);
+      }
+      return json(res, 405, { error: "Method not allowed" });
+    }
     if (p === "/_ext/api/dashboard") return Dashboard.handle(req, res, url, user, { json, readBody });
 
   if (p === "/_ext/api/update" && !write) return json(res, 200, await Update.status(req, VERSION, user, url.searchParams.has("refresh")));

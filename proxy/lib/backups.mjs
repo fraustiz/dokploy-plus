@@ -1,12 +1,6 @@
-// Reads Dokploy's own API with the caller's session. Never returns service credentials.
-const upstream = new URL(process.env.DOKPLOY_UPSTREAM || process.env.DOKPLOY_URL || 'http://dokploy:3000');
-async function rpc(req,name,input) {
- const url=new URL('/api/trpc/'+name,upstream);
- if(input)url.searchParams.set('input',JSON.stringify({json:input}));
- const r=await fetch(url,{headers:{cookie:req.headers.cookie||'',host:req.headers.host||upstream.host,'x-forwarded-proto':'https'},signal:AbortSignal.timeout(10000)});
- if(!r.ok)throw new Error(`Dokploy ${name}: HTTP ${r.status}`);
- const body=await r.json();return body.result?.data?.json;
-}
+// Dokploy-managed backups, read with the caller's session. Never returns service credentials.
+import { rpc as call } from "./dokploy.mjs";
+const rpc = (req, name, input) => call(req, name, input, { timeout: 10000 });
 export function summarize(service,kind,project) {
  const backups=[...(service.backups||[]),...(service.volumeBackups||[])];
  return backups.map(b=>{

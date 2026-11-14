@@ -1,5 +1,8 @@
 import {C,esc,icon,t,alertBlock,LOCALE,nf} from './ui.js';
-const kindName=k=>({jellyfin:'Jellyfin',homeassistant:'Home Assistant',uptimekuma:'Uptime Kuma',beszel:'Beszel',link:t('Raccourci','Shortcut')})[k];
+const kindName=k=>({jellyfin:'Jellyfin',homeassistant:'Home Assistant',uptimekuma:'Uptime Kuma',beszel:'Beszel',sonarr:'Sonarr',radarr:'Radarr',speedtest:'Speedtest Tracker',pihole:'Pi-hole',link:t('Raccourci','Shortcut')})[k];
+const KINDS=['link','jellyfin','homeassistant','beszel','uptimekuma','sonarr','radarr','speedtest','pihole'];
+// Small trend line (e.g. download speed over the last tests).
+const spark=values=>{const v=values.filter(x=>x!=null);if(v.length<2)return '';const max=Math.max(...v),min=Math.min(...v),span=max-min||1;return `<svg viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true" style="width:100%;height:28px"><polyline points="${v.map((x,i)=>`${(i/(v.length-1)*100).toFixed(1)},${(22-(x-min)/span*20).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--primary)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;};
 const DASHBOARD_CSS = `
 .xd { --xd-surface:var(--card); --xd-line:var(--border); --xd-muted:var(--muted-foreground); --xd-accent:var(--primary); }
 .xd-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-bottom:24px; }
@@ -90,7 +93,24 @@ export function mount(root,{api}) {
   const s=data.states?.[app.id];
   if(app.integration==='link')return '';
   if(!s)return `<p class="${C.muted}">${t('Chargement…','Loading…')}</p>`;
-  if(s.online===null)return `<p class="${C.muted}">${t('Jeton requis dans les réglages du Dashboard.','Token required in Dashboard settings.')}</p>`;
+  if(s.online===null)return `<p class="${C.muted}">Not connected yet: add its credentials in <a class="underline" href="#ext-settings">Settings</a>.</p>`;
+  if((app.integration==='sonarr'||app.integration==='radarr')&&s.online){
+   const when=v=>v?new Date(v).toLocaleDateString(LOCALE,{weekday:'short',day:'numeric',month:'short'}):'Date unknown';
+   const noun=app.integration==='sonarr'?'episode':'movie';
+   return `<p class="text-sm">${s.upcomingCount?`${s.upcomingCount} ${noun}${s.upcomingCount===1?'':'s'} in the next 7 days`:'Nothing scheduled in the next 7 days'}${s.queue.total?` · ${s.queue.total} in the queue`:''}</p>
+    ${s.upcoming.map(u=>`<p class="${C.muted}">${esc(when(u.at))} — ${esc(u.title)}${u.detail?` · ${esc(u.detail)}`:''}${u.downloaded?' · downloaded':''}</p>`).join('')}
+    ${s.health.map(h=>`<p class="${h.type==='error'?'text-destructive':'text-muted-foreground'}">${esc(h.message)}</p>`).join('')}`;
+  }
+  if(app.integration==='speedtest'&&s.online){
+   if(!s.latest)return `<p class="${C.muted}">No completed test yet.</p>`;
+   const mbps=v=>v==null?'—':nf.format(Math.round(v/1e6));
+   const last=s.latest.at?new Date(String(s.latest.at).replace(' ','T')).toLocaleString(LOCALE,{dateStyle:'medium',timeStyle:'short'}):'';
+   return `<p class="text-sm">↓ ${mbps(s.latest.downloadBps)} Mbps · ↑ ${mbps(s.latest.uploadBps)} Mbps · ${nf.format(s.latest.pingMs)} ms</p>${spark(s.history.map(h=>h.downloadBps))}<p class="${C.small}">Last test ${esc(last)} · line: download over the last ${s.history.length} tests</p>`;
+  }
+  if(app.integration==='pihole'&&s.online){
+   const off=s.blocking.state!=='enabled';
+   return `<p class="text-sm">${nf.format(s.percent||0)}% blocked today · ${nf.format(s.total||0)} queries</p>${off?`<p class="text-destructive">Blocking ${esc(s.blocking.state)}${s.blocking.timer?`, back on in ${Math.ceil(s.blocking.timer/60)} min`:''}</p>`:''}<p class="${C.small}"><a class="underline" href="#ext-pihole">Manage Pi-hole</a></p>`;
+  }
   if(app.integration==='uptimekuma'&&s.online)return `<p class="${C.muted}">${s.monitors.length} monitors available</p>`;
   if(app.integration==='beszel'&&s.online)return `<p class="${C.muted}">${s.systems.length} monitored servers</p>`;
   const status=s.online?t('En ligne','Online'):t('Indisponible','Unavailable');
@@ -138,7 +158,7 @@ export function mount(root,{api}) {
   <label>URL<input class="${C.input}" data-url type="url" value="${esc(a.url)}" placeholder="https://example.com" required></label>
   <label>Logo URL <span class="${C.small}">(optional, detected automatically)</span><input class="${C.input}" data-logo type="url" value="${esc(a.logo||'')}" placeholder="https://example.com/logo.svg"></label>
   <label>${t('Catégorie','Category')}<input class="${C.input}" data-category value="${esc(a.category)}" required list="dashboard-categories"></label>
-  <label>${t('Intégration','Integration')}<select class="${C.select}" data-kind>${['link','jellyfin','homeassistant','beszel','uptimekuma'].map(k=>`<option value="${k}" ${a.integration===k?'selected':''}>${esc(kindName(k))}</option>`).join('')}</select></label>
+  <label>${t('Intégration','Integration')}<select class="${C.select}" data-kind>${KINDS.map(k=>`<option value="${k}" ${a.integration===k?'selected':''}>${esc(kindName(k))}</option>`).join('')}</select></label>
   <label>${t('Entités Home Assistant (6 maximum, séparées par des virgules)','Home Assistant entities (up to 6, comma-separated)')}<input class="${C.input}" data-entities value="${esc(a.entities.join(', '))}" placeholder="sensor.temperature, light.salon"></label>
   <button type="button" class="${C.btnOutlineSm}" data-remove>${t('Retirer la carte','Remove card')}</button>`;
   box.querySelector('[data-remove]').onclick=()=>box.remove();return box;

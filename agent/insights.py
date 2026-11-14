@@ -11,8 +11,9 @@ from urllib.parse import quote
 STATE = Path(os.environ.get('STATE_DIR', '/state'))
 SOCKET = os.environ.get('DOCKER_SOCK', '/var/run/docker.sock')
 _lock = threading.Lock()
-_data = {'apps': [], 'events': [], 'history': [], 'containers': [], 'docker_error': None}
+_data = {'apps': [], 'events': [], 'history': [], 'containers': [], 'services': None, 'docker_error': None}
 _previous = {}
+_services_prev = {}
 _previous_io = None
 
 def docker(path, method="GET"):
@@ -135,6 +136,44 @@ def sample():
     _data['history'].append({'at': now, 'disks': io, 'memory_pressure_pct': pressure})
     _data['history'] = _data['history'][-1440:]
 
+def swarm():
+    """Replicated Swarm services running fewer tasks than requested (e.g. an image that disappeared).
+
+    Container checks cannot see this case: no container exists. An incident is raised after two
+    checks in a row (about 2 minutes) so that a normal redeploy does not trigger it.
+    """
+    try:
+        services = docker('/services')
+        tasks = docker('/tasks?filters=' + quote(json.dumps({'desired-state': ['running']})))
+    except (OSError, ValueError):
+        _data['services'] = None  # not a Swarm manager, or no Docker access
+        return
+    now = time.time()
+    out = []
+    for svc in services or []:
+        spec = svc.get('Spec') or {}
+        replicated = (spec.get('Mode') or {}).get('Replicated')
+        if not replicated:
+            continue
+        name = spec.get('Name') or svc['ID'][:12]
+        mine = sorted((t for t in tasks or [] if t.get('ServiceID') == svc['ID']), key=lambda t: t.get('UpdatedAt', ''), reverse=True)
+        running = sum(1 for t in mine if (t.get('Status') or {}).get('State') == 'running')
+        desired = replicated.get('Replicas') or 0
+        error = next(((t.get('Status') or {}).get('Err') for t in mine if (t.get('Status') or {}).get('Err')), None)
+        prev = _services_prev.get(name) or {}
+        streak = prev.get('streak', 0) + 1 if running < desired else 0
+        item = {'name': name, 'desired': desired, 'running': running, 'streak': streak,
+                'error': error[:300] if error and running < desired else None,
+                'since': (prev.get('since') or now) if running < desired else None}
+        if streak == 2:
+            _data['events'].append({'at': now, 'app': name, 'container': name, 'kind': 'service-down', 'resolved': False})
+        elif streak == 0 and prev.get('streak', 0) >= 2:
+            _data['events'].append({'at': now, 'app': name, 'container': name, 'kind': 'recovered', 'resolved': True})
+        out.append(item)
+    _services_prev.clear()
+    _services_prev.update({i['name']: i for i in out})
+    _data['services'] = sorted(out, key=lambda i: (i['running'] >= i['desired'], i['name']))
+
 def snapshot():
     with _lock:
         return json.loads(json.dumps(_data))
@@ -145,6 +184,7 @@ def start():
         _data['events'] = saved.get('events', [])[-500:]
         _data['history'] = saved.get('history', [])[-1440:]
         _previous.update({c['id']: c for c in saved.get('containers', [])})
+        _services_prev.update({s['name']: s for s in saved.get('services') or []})
     except (OSError, ValueError):
         pass
     def loop():
@@ -152,6 +192,9 @@ def start():
             with _lock:
                 try: inventory()
                 except Exception as e: _data['docker_error'] = str(e)
+                try: swarm()
+                except Exception: _data['services'] = None
+                _data['events'] = _data['events'][-500:]
                 sample()
                 try:
                     STATE.mkdir(mode=0o700, parents=True, exist_ok=True)

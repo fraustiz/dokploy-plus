@@ -1,8 +1,12 @@
 import * as Kuma from "./uptime-kuma.mjs";
+import * as Arr from "./arr.mjs";
+import * as Speedtest from "./speedtest.mjs";
+import * as Pihole from "./pihole.mjs";
 import * as Beszel from "./beszel.mjs";
 import * as Config from './config.mjs';
 import {randomUUID} from 'node:crypto';
 const initial = {categories: ['Applications'], apps: []};
+export const KINDS = ['jellyfin','homeassistant','beszel','uptimekuma','sonarr','radarr','speedtest','pihole'];
 const fail = (message) => { const e = new Error(message); e.status = 400; throw e; };
 const text = (v,max=120) => String(v || '').trim().slice(0,max);
 function httpUrl(v) {
@@ -14,7 +18,7 @@ export function validate(body) {
  const categories = [...new Set((body.categories || []).map(v=>text(v)).filter(Boolean))].slice(0,30);
  if(!categories.length) fail('At least one category required');
  if(!Array.isArray(body.apps) || body.apps.length>150) fail('Invalid app list');
- const apps=body.apps.map(a=>({id:/^[\w-]{1,80}$/.test(a.id)?a.id:randomUUID(),name:text(a.name),url:httpUrl(a.url),logo:a.logo?httpUrl(a.logo):'',category:categories.includes(a.category)?a.category:categories[0],integration:['jellyfin','homeassistant','beszel','uptimekuma'].includes(a.integration)?a.integration:'link',entities:(a.entities||[]).filter(v=>typeof v==='string' && /^[a-z_]+\.[\w]+$/.test(v)).slice(0,6)}));
+ const apps=body.apps.map(a=>({id:/^[\w-]{1,80}$/.test(a.id)?a.id:randomUUID(),name:text(a.name),url:httpUrl(a.url),logo:a.logo?httpUrl(a.logo):'',category:categories.includes(a.category)?a.category:categories[0],integration:KINDS.includes(a.integration)?a.integration:'link',entities:(a.entities||[]).filter(v=>typeof v==='string' && /^[a-z_]+\.[\w]+$/.test(v)).slice(0,6)}));
  if(apps.some(a=>!a.name)) fail('An app name is required');
  if(new Set(apps.map(a=>a.id)).size!==apps.length) fail('Duplicate app IDs');
  return {categories,apps};
@@ -47,6 +51,12 @@ export async function integration(app) {
    value={...(await Beszel.systems(base)),at};
   } else if(app.integration==='uptimekuma') {
    value={...(await Kuma.metrics(base)),at};
+  } else if(app.integration==='sonarr'||app.integration==='radarr') {
+   value={...(await Arr.summary(app.integration,base,Config.secret(app.integration+'Key'))),at};
+  } else if(app.integration==='speedtest') {
+   value={...(await Speedtest.summary(base,Config.secret('speedtestToken'))),at};
+  } else if(app.integration==='pihole') {
+   value={...(await Pihole.card(base,Config.secret('piholePassword'))),at};
   } else return null;
  } catch(e) { value={online:false,error:e.message.startsWith('HTTP')?e.message:'Connection failed',at}; }
  cache.set(app.id,{until:Date.now()+30000,value});return value;
@@ -71,7 +81,7 @@ export async function handle(req,res,url,user,{json,readBody}) {
  const cfg=Config.load();const c=cfg.dashboard||initial;
  if(req.method==='GET') {
   const [states,healthy]=await Promise.all([Promise.all(c.apps.filter(a=>a.integration!=='link').map(async a=>[a.id,await integration(a)])).then(Object.fromEntries),health(cfg,c.apps)]);
-  return json(res,200,{...c,states,health:healthy,owner:user.role==='owner',tokens:{jellyfin:!!Config.secret('jellyfinToken'),homeassistant:!!Config.secret('homeassistantToken'),discord:!!Config.secret('discordWebhook'),beszel:!!Config.secret('beszelEmail')&&!!Config.secret('beszelPassword'),uptimekuma:!!Config.secret('uptimeKumaKey')}});
+  return json(res,200,{...c,states,health:healthy,owner:user.role==='owner',tokens:{jellyfin:!!Config.secret('jellyfinToken'),homeassistant:!!Config.secret('homeassistantToken'),discord:!!Config.secret('discordWebhook'),beszel:!!Config.secret('beszelEmail')&&!!Config.secret('beszelPassword'),uptimekuma:!!Config.secret('uptimeKumaKey'),sonarr:!!Config.secret('sonarrKey'),radarr:!!Config.secret('radarrKey'),speedtest:!!Config.secret('speedtestToken'),pihole:!!Config.secret('piholePassword')}});
  }
  if(req.method!=='PUT')return json(res,405,{error:'Method not allowed'});
  if(user.role!=='owner')return json(res,403,{error:'Owner only'});

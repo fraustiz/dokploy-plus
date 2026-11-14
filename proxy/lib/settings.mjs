@@ -1,9 +1,12 @@
 import * as C from './config.mjs';
 import * as CF from './cloudflare.mjs';
 import * as Kuma from './uptime-kuma.mjs';
+import * as Arr from './arr.mjs';
+import * as Speedtest from './speedtest.mjs';
+import * as Pihole from './pihole.mjs';
 import * as Alerts from './alerts.mjs';
 import * as Dashboard from './dashboard.mjs';
-export const connections={cloudflare:{fields:['cloudflareToken']},jellyfin:{fields:['jellyfinToken'],url:true},homeassistant:{fields:['homeassistantToken'],url:true},beszel:{fields:['beszelEmail','beszelPassword'],url:true},uptimekuma:{fields:['uptimeKumaKey'],url:true},discord:{fields:['discordWebhook']}};
+export const connections={cloudflare:{fields:['cloudflareToken']},jellyfin:{fields:['jellyfinToken'],url:true},homeassistant:{fields:['homeassistantToken'],url:true},beszel:{fields:['beszelEmail','beszelPassword'],url:true},uptimekuma:{fields:['uptimeKumaKey'],url:true},sonarr:{fields:['sonarrKey'],url:true},radarr:{fields:['radarrKey'],url:true},speedtest:{fields:['speedtestToken'],url:true},pihole:{fields:['piholePassword'],url:true},discord:{fields:['discordWebhook']}};
 const error=message=>{const e=new Error(message);e.status=400;throw e;};
 function url(value){let u;try{u=new URL(value);}catch{error('Invalid connection URL');}if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.search||u.hash)error('Use an HTTP(S) base URL without credentials, query or fragment');return u.href.replace(/\/$/,'');}
 export function view(){const cfg=C.load();return {...C.publicView(),siteTitle:cfg.siteTitle||process.env.SITE_TITLE||'',connections:Object.fromEntries(Object.entries(connections).map(([id,c])=>[id,{url:c.url?(cfg.integrations?.[id]?.url||cfg.dashboard?.apps.find(a=>a.integration===id)?.url||''):'',saved:Object.fromEntries(c.fields.map(f=>[f,!!C.secret(f)]))}]))};}
@@ -24,6 +27,9 @@ export async function test(id,body){if(!connections[id])error('Unknown integrati
  if(id==='homeassistant'){if(!secret('homeassistantToken'))error('Home Assistant token required');const info=await get(base,'/api/config',{Authorization:'Bearer '+secret('homeassistantToken')});return `Home Assistant ${info.version} connected.`;}
  if(id==='beszel'){if(!secret('beszelEmail')||!secret('beszelPassword'))error('Beszel account email and password required');const r=await getAuthBeszel(base,secret('beszelEmail'),secret('beszelPassword'));return `Connected. ${r} systems available.`;}
  if(id==='uptimekuma'){const r=await Kuma.metrics(base,secret('uptimeKumaKey'));if(!r.configured)error('Uptime Kuma metrics API key required');return `Connected. ${r.monitors.length} monitors available.`;}
+ if(id==='sonarr'||id==='radarr'){if(!secret(id+'Key'))error('API key required');const r=await Arr.summary(id,base,secret(id+'Key'));return `Connected. ${r.upcomingCount} release${r.upcomingCount===1?'':'s'} in the next 7 days, ${r.queue.total} in the queue.`;}
+ if(id==='speedtest'){if(!secret('speedtestToken'))error('API token required');const r=await Speedtest.summary(base,secret('speedtestToken'));return r.latest?`Connected. Latest test: ${Math.round(r.latest.downloadBps/1e6)} Mbps down, ${Math.round(r.latest.uploadBps/1e6)} Mbps up.`:'Connected. No completed test yet.';}
+ if(id==='pihole'){if(!secret('piholePassword'))error('Pi-hole app password required');return Pihole.test(base,secret('piholePassword'));}
  if(id==='discord'){if(!secret('discordWebhook'))error('Discord webhook required');await Alerts.sendDiscord(secret('discordWebhook'),'Dokploy Plus',['Dokploy Plus connection test.']);return 'Test message sent.';}
 }
 async function getAuthBeszel(base,email,password){const r=await fetch(base+'/api/collections/users/auth-with-password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({identity:email,password}),redirect:'error',signal:AbortSignal.timeout(8000)});if(!r.ok)throw new Error(`Beszel login failed (HTTP ${r.status})`);const auth=await r.json();const data=await get(base,'/api/collections/systems/records?perPage=1&fields=id',{Authorization:auth.token});return data.totalItems;}
